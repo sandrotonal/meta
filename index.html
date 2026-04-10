@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Playables SDK -->
+<script>// Playables SDK v1.0.0
+// Game lifecycle bridge: rAF-based game-ready detection + event communication
+(function() {
+  'use strict';
+
+  // Idempotency: skip if already initialized (e.g., server-side injection
+  // followed by client-side inject-javascript via the Bloks webview component).
+  if (window.playablesSDK) return;
+
+  var HANDLER_NAME = 'playablesGameEventHandler';
+  var ANDROID_BRIDGE_NAME = '_MetaPlayablesBridge';
+  var RAF_FRAME_THRESHOLD = 3;
+
+  var gameReadySent = false;
+  var firstInteractionSent = false;
+  var errorSent = false;
+  var frameCount = 0;
+  var originalRAF = window.requestAnimationFrame;
+
+  // --- Transport Layer ---
+
+  function hasIOSBridge() {
+    return !!(window.webkit &&
+              window.webkit.messageHandlers &&
+              window.webkit.messageHandlers[HANDLER_NAME]);
+  }
+
+  function hasAndroidBridge() {
+    return !!(window[ANDROID_BRIDGE_NAME] &&
+              typeof window[ANDROID_BRIDGE_NAME].postEvent === 'function');
+  }
+
+  function isInIframe() {
+    return !!(window.parent && window.parent !== window);
+  }
+
+  function sendEvent(eventName, payload) {
+    var message = {
+      type: eventName,
+      payload: payload || {},
+      timestamp: Date.now()
+    };
+
+    if (hasIOSBridge()) {
+      try {
+        window.webkit.messageHandlers[HANDLER_NAME].postMessage(message);
+      } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (hasAndroidBridge()) {
+    try {
+      var p = payload || {};
+      p.__secureToken = window.__fbAndroidBridgeAuthToken || '';
+      window[ANDROID_BRIDGE_NAME].postEvent(
+        eventName,
+        JSON.stringify(p)
+      );
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+    if (isInIframe()) {
+      try {
+        window.parent.postMessage(message, '*');
+      } catch (e) { /* ignore */ }
+      return;
+    }
+  }
+
+  // --- rAF Game-Ready Detection ---
+
+  function onFrame() {
+    if (gameReadySent) return;
+
+    frameCount++;
+    if (frameCount >= RAF_FRAME_THRESHOLD) {
+      gameReadySent = true;
+      sendEvent('game_ready', {
+        frame_count: frameCount,
+        detected_at: Date.now()
+      });
+      return;
+    }
+
+    originalRAF.call(window, onFrame);
+  }
+
+  if (originalRAF) {
+    window.requestAnimationFrame = function(callback) {
+      if (!gameReadySent) {
+        return originalRAF.call(window, function(timestamp) {
+          frameCount++;
+          if (frameCount >= RAF_FRAME_THRESHOLD && !gameReadySent) {
+            gameReadySent = true;
+            sendEvent('game_ready', {
+              frame_count: frameCount,
+              detected_at: Date.now()
+            });
+          }
+          callback(timestamp);
+        });
+      }
+      return originalRAF.call(window, callback);
+    };
+  }
+
+  // --- First User Interaction Detection ---
+
+  function setupFirstInteractionDetection() {
+    var events = ['touchstart', 'mousedown', 'keydown'];
+
+    function onFirstInteraction() {
+      if (firstInteractionSent) return;
+      firstInteractionSent = true;
+      sendEvent('user_interaction_start', null);
+
+      for (var i = 0; i < events.length; i++) {
+        document.removeEventListener(events[i], onFirstInteraction, true);
+      }
+    }
+
+    for (var i = 0; i < events.length; i++) {
+      document.addEventListener(events[i], onFirstInteraction, true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupFirstInteractionDetection);
+  } else {
+    setupFirstInteractionDetection();
+  }
+
+  // --- Auto Error Capture ---
+
+  window.addEventListener('error', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    sendEvent('error', {
+      message: event.message || 'Unknown error',
+      source: event.filename || '',
+      lineno: event.lineno || 0,
+      colno: event.colno || 0,
+      auto_captured: true
+    });
+  });
+
+  window.addEventListener('unhandledrejection', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    var reason = event.reason;
+    sendEvent('error', {
+      message: (reason instanceof Error) ? reason.message : String(reason),
+      type: 'unhandled_promise_rejection',
+      auto_captured: true
+    });
+  });
+
+  // --- Public API ---
+
+  window.playablesSDK = {
+    complete: function(score) {
+      sendEvent('game_ended', {
+        score: score,
+        completed: true
+      });
+    },
+
+    error: function(message) {
+      if (errorSent) return;
+      errorSent = true;
+      sendEvent('error', {
+        message: message || 'Unknown error',
+        auto_captured: false
+      });
+    },
+
+    sendEvent: function(eventName, payload) {
+      if (!eventName || typeof eventName !== 'string') return;
+      sendEvent(eventName, payload);
+    }
+  };
+
+  // Kick off rAF detection in case no game code calls rAF immediately
+  if (originalRAF) {
+    originalRAF.call(window, onFrame);
+  }
+})();</script>
+<script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ÖMER ÖZBAY — INCEPTURE</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; background:#000; color:#fff; overflow:hidden; overscroll-behavior:none; }
+body { font-family:system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
+
+canvas { position:fixed; top:0; left:0; width:100%; height:100%; z-index:1; display:block; }
+
+header {
+  position:fixed; top:0; left:0; width:100%;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:26px 32px; z-index:20; pointer-events:none;
+}
+header div {
+  font-family:'JetBrains Mono', monospace;
+  font-size:11px; letter-spacing:1px; text-transform:uppercase;
+  opacity:0.85; pointer-events:auto;
+}
+#aboutBtn { cursor:pointer; }
+
+.center {
+  position:fixed; top:50%; left:50%;
+  transform:translate(-50%, -50%);
+  width:100%; text-align:center; z-index:5;
+  pointer-events:none;
+}
+.meta {
+  position:absolute; top:-70px; left:50%;
+  transform:translateX(-50%);
+  width:100%; max-width:1600px;
+  display:flex; justify-content:space-between;
+  padding:0 6%; font-family:'JetBrains Mono', monospace;
+  font-size:11px; opacity:0.7; letter-spacing:0.5px;
+}
+#title {
+  font-family:'Anton', sans-serif;
+  font-size:16vw; line-height:0.8; font-weight:400;
+  letter-spacing:-0.01em; text-transform:uppercase;
+  margin:0; white-space:nowrap;
+}
+
+.bottom-wrap {
+  position:fixed; bottom:34px; left:50%;
+  transform:translateX(-50%);
+  width:560px; max-width:calc(100% - 32px);
+  z-index:100;
+}
+#menuBar {
+  background:#fff; color:#000;
+  height:54px; display:flex; align-items:center; justify-content:center;
+  font-family:'JetBrains Mono', monospace; font-size:13px;
+  cursor:pointer; user-select:none; -webkit-user-select:none;
+}
+#menu {
+  display:none;
+  position:absolute; bottom:54px; left:0; right:0;
+  background:rgba(5,5,5,0.85); border:1px solid rgba(255,255,255,0.12); border-bottom:none;
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+}
+.menu-item {
+  padding:17px 22px; font-family:'JetBrains Mono', monospace;
+  font-size:12px; color:#aaa; cursor:pointer;
+  border-bottom:1px solid rgba(255,255,255,0.08); text-transform:uppercase;
+  letter-spacing:0.6px; background:transparent;
+}
+.menu-item:last-child { border-bottom:none; }
+.menu-item:hover { background:rgba(255,255,255,0.06); color:#fff; }
+.menu-item.active { color:#fff; }
+
+#aboutPanel {
+  position:fixed; top:0; right:-420px; width:420px; max-width:90vw; height:100%;
+  background:#000; border-left:1px solid #222; z-index:200; padding:80px 40px;
+  transition:right .4s cubic-bezier(.22,1,.36,1); overflow-y:auto;
+}
+#aboutPanel.open { right:0; }
+#aboutOverlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:150;
+  opacity:0; pointer-events:none; transition:opacity .3s;
+}
+#aboutOverlay.open { opacity:1; pointer-events:auto; }
+
+@media (max-width:768px) {
+  header { padding:20px 20px; }
+  header div { font-size:10px; }
+  #title { font-size:22vw; }
+  .meta { top:-45px; padding:0 20px; font-size:10px; }
+  .bottom-wrap { bottom:20px; width:calc(100% - 24px); }
+  #menuBar { height:50px; font-size:12px; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<header>
+  <div>ÖMER ÖZBAY</div>
+  <div id="aboutBtn">ABOUT</div>
+</header>
+
+<div class="center">
+  <div class="meta">
+    <span id="num">01</span>
+    <span id="count">1 / 3</span>
+  </div>
+  <h1 id="title">INCEPTURE</h1>
+</div>
+
+<div class="bottom-wrap">
+  <div id="menu">
+    <div class="menu-item active" onclick="selectProject(0)">INCEPTURE</div>
+    <div class="menu-item" onclick="selectProject(1)">BLOG</div>
+    <div class="menu-item" onclick="selectProject(2)">SAAS</div>
+  </div>
+  <div id="menuBar">Hi, I'm Ömer Özbay. — CLICK TO BROWSE</div>
+</div>
+
+<div id="aboutOverlay"></div>
+<div id="aboutPanel">
+  <div id="aboutClose" style="position:absolute;top:26px;right:32px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;cursor:pointer;opacity:.7;text-transform:uppercase">Close</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;opacity:.4;margin-bottom:20px;text-transform:uppercase">About</div>
+  <h2 style="font-family:'Anton',sans-serif;font-size:48px;line-height:.9;margin:0 0 12px;letter-spacing:-.01em">ÖMER ÖZBAY</h2>
+  <p style="font-size:14px;opacity:.7;margin:0 0 24px">Full Stack Developer — Istanbul</p>
+  <p style="font-size:14px;line-height:1.6;opacity:.6;margin:0 0 16px">React, Next.js, React Native, Node.js. Building fast, clean products focused on performance.</p>
+  <p style="font-size:14px;line-height:1.6;opacity:.6;margin:0 0 32px">Hızlı, temiz web ve mobil uygulamalar.</p>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;opacity:.4;margin:0 0 12px;text-transform:uppercase">Contact</div>
+  <a href="mailto:hello@omerzbay.dev" style="color:#fff;text-decoration:none;font-size:14px;opacity:.8;display:block;margin-bottom:8px">hello@omerzbay.dev</a>
+  <a href="https://github.com/omerzbay" target="_blank" style="color:#fff;text-decoration:none;font-size:14px;opacity:.8">github.com/omerzbay</a>
+</div>
+
+<script>
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var w, h, cx, cy, maxR;
+var particles = [];
+var mouse = {x:0, y:0, active:false};
+var rotation = 0;
+var currentProject = 0;
+
+var projects = [
+  {name:'INCEPTURE', shape:0, num:'01'},
+  {name:'BLOG', shape:1, num:'02'},
+  {name:'SAAS', shape:2, num:'03'}
+];
+
+function resize() {
+  w = canvas.width = window.innerWidth;
+  h = canvas.height = window.innerHeight;
+  cx = w/2; cy = h/2;
+  maxR = Math.min(w, h) * 0.38;
+}
+resize();
+window.addEventListener('resize', function(){
+  resize();
+  setShape(projects[currentProject].shape);
+});
+
+for (var i=0; i<2800; i++) {
+  particles.push({x:0, y:0, tx:0, ty:0, vx:0, vy:0});
+}
+
+function setShape(shape) {
+  maxR = Math.min(w, h) * 0.38;
+  for (var i=0; i<2800; i++) {
+    var p = particles[i];
+    var t = i / 2800;
+    var x=0, y=0;
+    
+    if (shape === 0) {
+      var arms = 12;
+      var arm = i % arms;
+      var a = (arm / arms) * Math.PI * 2;
+      var r = Math.pow(t, 0.82) * maxR;
+      var spread = 0.12;
+      a += (Math.random() - 0.5) * spread;
+      r *= 0.9 + Math.random()*0.1;
+      x = Math.cos(a) * r;
+      y = Math.sin(a) * r;
+      x += (Math.random()-0.5) * r * 0.04;
+      y += (Math.random()-0.5) * r * 0.04;
+    } else if (shape === 1) {
+      var a2 = Math.random() * Math.PI * 2;
+      var r2 = Math.sqrt(Math.random()) * maxR * 0.92;
+      x = Math.cos(a2) * r2;
+      y = Math.sin(a2) * r2;
+    } else {
+      var arms3 = 8;
+      var arm3 = i % arms3;
+      var t2 = Math.floor(i / arms3) / (2800 / arms3);
+      var a3 = (arm3 / arms3) * Math.PI * 2 + t2 * Math.PI * 2.8;
+      var r3 = t2 * maxR * 0.9;
+      x = Math.cos(a3) * r3;
+      y = Math.sin(a3) * r3;
+    }
+    p.tx = x;
+    p.ty = y;
+  }
+}
+setShape(0);
+
+canvas.addEventListener('mousemove', function(e){
+  mouse.active = true;
+  mouse.x = e.clientX - cx;
+  mouse.y = e.clientY - cy;
+});
+canvas.addEventListener('mouseleave', function(){ mouse.active = false; });
+canvas.addEventListener('touchmove', function(e){
+  if(e.touches[0]){
+    mouse.active = true;
+    mouse.x = e.touches[0].clientX - cx;
+    mouse.y = e.touches[0].clientY - cy;
+  }
+}, {passive:true});
+
+function animate() {
+  ctx.clearRect(0,0,w,h);
+  rotation += 0.0007;
+  var cosR = Math.cos(rotation);
+  var sinR = Math.sin(rotation);
+  
+  ctx.fillStyle = '#fff';
+  for (var i=0; i<particles.length; i++) {
+    var p = particles[i];
+    var tx = p.tx * cosR - p.ty * sinR;
+    var ty = p.tx * sinR + p.ty * cosR;
+    
+    if (mouse.active) {
+      var dx = p.x - mouse.x;
+      var dy = p.y - mouse.y;
+      var d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 110 && d > 0.1) {
+        var f = (110 - d) / 110;
+        p.vx += (dx / d) * f * 2.2;
+        p.vy += (dy / d) * f * 2.2;
+      }
+    }
+    
+    p.vx += (tx - p.x) * 0.025;
+    p.vy += (ty - p.y) * 0.025;
+    p.vx *= 0.91;
+    p.vy *= 0.91;
+    p.x += p.vx;
+    p.y += p.vy;
+    
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(cx + p.x, cy + p.y, 1.4, 1.4);
+  }
+  requestAnimationFrame(animate);
+}
+animate();
+
+function changeProject(idx) {
+  currentProject = idx;
+  var proj = projects[idx];
+  setShape(proj.shape);
+  document.getElementById('title').textContent = proj.name;
+  document.getElementById('num').textContent = proj.num;
+  document.getElementById('count').textContent = (idx+1) + ' / 3';
+  
+  var items = document.querySelectorAll('.menu-item');
+  for (var i=0; i<items.length; i++) {
+    items[i].classList.toggle('active', i === idx);
+  }
+}
+
+function selectProject(idx) {
+  changeProject(idx);
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('menuBar').textContent = "Hi, I'm Ömer Özbay. — CLICK TO BROWSE";
+}
+
+document.getElementById('menuBar').onclick = function() {
+  var menu = document.getElementById('menu');
+  var isOpen = menu.style.display === 'block';
+  menu.style.display = isOpen ? 'none' : 'block';
+  this.textContent = isOpen ? "Hi, I'm Ömer Özbay. — CLICK TO BROWSE" : "SELECT PROJECT — CLICK TO CLOSE";
+};
+
+// ABOUT PANEL
+var aboutBtn = document.getElementById('aboutBtn');
+var aboutPanel = document.getElementById('aboutPanel');
+var aboutOverlay = document.getElementById('aboutOverlay');
+var aboutClose = document.getElementById('aboutClose');
+
+function openAbout() {
+  aboutPanel.classList.add('open');
+  aboutOverlay.classList.add('open');
+}
+function closeAbout() {
+  aboutPanel.classList.remove('open');
+  aboutOverlay.classList.remove('open');
+}
+aboutBtn.onclick = openAbout;
+aboutClose.onclick = closeAbout;
+aboutOverlay.onclick = closeAbout;
+
+window.addEventListener('wheel', function(e) {
+  if (e.deltaY > 0) {
+    var next = (currentProject + 1) % 3;
+    changeProject(next);
+  } else {
+    var prev = (currentProject - 1 + 3) % 3;
+    changeProject(prev);
+  }
+}, {passive:true});
+
+var startY = 0;
+window.addEventListener('touchstart', function(e){ startY = e.touches[0].clientY; }, {passive:true});
+window.addEventListener('touchend', function(e){
+  var dy = startY - e.changedTouches[0].clientY;
+  if (Math.abs(dy) > 50) {
+    if (dy > 0) changeProject((currentProject + 1) % 3);
+    else changeProject((currentProject - 1 + 3) % 3);
+  }
+}, {passive:true});
+</script>
+</body>
+</html>
